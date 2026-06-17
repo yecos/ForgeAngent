@@ -71,6 +71,47 @@ async def health():
     return {"status": "ok", "model": settings.model, "models": list_models()}
 
 
+# ── Status endpoints (graceful responses for common polling paths) ─────
+# Some clients (e.g. other agent dashboards open in the browser) poll
+# generic status endpoints. We return a friendly Forge-branded response
+# instead of a confusing 404.
+
+@app.get("/api/status")
+@app.get("/api/system")
+async def api_status():
+    return {
+        "service": "Forge",
+        "version": "1.0.0",
+        "status": "running",
+        "model": settings.model,
+        "endpoints": [
+            "/health",
+            "/api/status",
+            "/api/tools",
+            "/documents",
+            "/memory",
+            "/soul",
+            "socket.io (WebSocket)",
+        ],
+    }
+
+
+@app.get("/api/tools")
+async def api_tools():
+    """List available tools for the agents."""
+    return {
+        "tools": [
+            {"name": "web_search", "description": "DuckDuckGo web search"},
+            {"name": "doc_search", "description": "Semantic search over uploaded documents"},
+            {"name": "execute_code", "description": "Sandboxed Python execution"},
+            {"name": "memory_remember", "description": "Store a fact or preference"},
+            {"name": "memory_recall", "description": "Recall relevant memories"},
+            {"name": "skill_create", "description": "Create a reusable skill"},
+            {"name": "skill_lookup", "description": "Look up an existing skill"},
+        ]
+    }
+
+
 @app.post("/documents/upload")
 async def upload_document(file: UploadFile = File(...)):
     """Upload a document, extract text, and ingest into ChromaDB."""

@@ -3,8 +3,14 @@ Forge — Configuración central del backend Python.
 
 Ajusta estos valores antes de arrancar el backend.
 """
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
+
+# ── Silence ChromaDB telemetry (avoids noisy posthog errors on startup) ──
+# Must be set BEFORE chromadb is imported.
+os.environ.setdefault("ANONYMIZED_TELEMETRY", "False")
+os.environ.setdefault("CHROMA_TELEMETRY_IMPL", "none")
 
 
 @dataclass
