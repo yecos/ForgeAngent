@@ -2,12 +2,14 @@
 
 Sistema multi-agente local inspirado en [Hermes Agent](https://github.com/nousresearch/hermes-agent) de NousResearch, optimizado para **desarrollo de aplicaciones** con GPU NVIDIA.
 
+> 🔗 **Repositorio**: https://github.com/yecos/ForgeAngent
+
 ## ✨ Características
 
 - **5 agentes especializados** coordinados por un Orchestrator (estilo Hermes)
 - **100% local** con Ollama — tus datos nunca salen de tu máquina
 - **Bilingüe ES/EN** — el agente se adapta al idioma del usuario
-- **Memoria persistente** con ChromaDB (vectorial + FTS)
+- **Memoria persistente** con ChromaDB (vectorial)
 - **RAG sobre tus documentos** — sube PDFs, código, markdown
 - **Búsqueda web** con DuckDuckGo (sin API key)
 - **Ejecución de código** sandboxed con límites de memoria y tiempo
@@ -15,87 +17,219 @@ Sistema multi-agente local inspirado en [Hermes Agent](https://github.com/nousre
 - **Skills** — memoria procedural reutilizable
 - **Streaming en tiempo real** vía WebSocket
 
-## 🏗️ Arquitectura
+---
 
+## 📋 Requisitos
+
+### Para el frontend Next.js
+- **Node.js 18+** o **Bun** (recomendado: [instalar Bun](https://bun.sh))
+- **npm** o **bun**
+
+### Para el backend Python local (con GPU NVIDIA)
+- **Python 3.10+**
+- **Ollama** instalado ([https://ollama.ai](https://ollama.ai))
+- **GPU NVIDIA** con CUDA (opcional pero recomendado para velocidad)
+  - Mínimo: 8 GB VRAM (RTX 3060 / 4060)
+  - Recomendado: 12-24 GB VRAM (RTX 4070 / 4080 / 4090)
+- **RAM**: 16 GB mínimo, 32 GB recomendado
+- **Disco**: ~10 GB para modelos y dependencias
+
+### Sin GPU (alternativa)
+- CPU moderna (8+ núcleos) con 16 GB RAM
+- Modelos pequeños: `qwen2.5:1.5b` o `phi3.5:3.8b`
+
+---
+
+## 🚀 Instalación Local — Paso a Paso
+
+### Paso 1: Clonar el repositorio
+
+```bash
+git clone https://github.com/yecos/ForgeAngent.git
+cd ForgeAngent
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│  Browser (Next.js 16 + Tailwind + shadcn/ui)                    │
-│  ┌──────────────┬─────────────┬────────────┬──────────────┐    │
-│  │  Chat UI     │ Memoria     │ Skills     │ Documentos   │    │
-│  │  Bilingüe    │ Persistente │ (procedim.)│ (RAG upload) │    │
-│  └──────────────┴─────────────┴────────────┴──────────────┘    │
-│                          ↕ WebSocket                            │
-├─────────────────────────────────────────────────────────────────┤
-│  Agent Runtime (TS mini-service en preview / Python en local)   │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │  Orchestrator → plan → delegate → synthesize             │  │
-│  │       ↓         ↓         ↓           ↓                  │  │
-│  │   Coder    Researcher  Doc Analyst  Reviewer             │  │
-│  │   (code)   (web)        (RAG)         (verify)           │  │
-│  └──────────────────────────────────────────────────────────┘  │
-│                          ↕                                       │
-├─────────────────────────────────────────────────────────────────┤
-│  Backend Local (Ollama + ChromaDB + DuckDuckGo + Sandbox)       │
-└─────────────────────────────────────────────────────────────────┘
-```
 
-## 🚀 Inicio Rápido (Local con GPU NVIDIA)
+### Paso 2: Instalar Ollama y descargar modelos
 
-### 1. Instalar Ollama
+**Instalar Ollama:**
 
 ```bash
 # Linux / WSL2
 curl -fsSL https://ollama.ai/install.sh | sh
 
-# Descargar un modelo (8-12 GB VRAM recomendado)
-ollama pull llama3.1:8b
-ollama pull nomic-embed-text  # para embeddings
+# macOS
+brew install ollama
+
+# Windows
+# Descarga el instalador desde https://ollama.ai/download/windows
 ```
 
-**Modelos recomendados según tu GPU:**
+**Iniciar el servicio Ollama:**
 
-| GPU              | VRAM    | Modelo recomendado           |
-|------------------|---------|------------------------------|
-| RTX 3060 / 4060  | 8-12 GB | `llama3.1:8b`                |
-| RTX 4070 / 4080  | 12-16 GB| `llama3.1:13b` o `qwen2.5:14b` |
-| RTX 4090         | 24 GB   | `llama3.1:70b` o `qwen2.5:32b` |
-| RTX 4090 + 3090  | 48 GB   | `llama3.1:70b` (quantizado)  |
+```bash
+ollama serve
+```
 
-### 2. Iniciar el backend Python
+**Descargar el modelo principal** (en otra terminal):
+
+```bash
+# Para 8-12 GB VRAM (RTX 3060/4060) — RECOMENDADO
+ollama pull llama3.1:8b
+
+# Para 12-24 GB VRAM (RTX 4070/4080)
+# ollama pull llama3.1:13b
+# ollama pull qwen2.5-coder:7b
+
+# Para 24+ GB VRAM (RTX 4090)
+# ollama pull llama3.1:70b
+# ollama pull qwen2.5:32b
+
+# Modelo de embeddings (REQUERIDO para memoria y RAG)
+ollama pull nomic-embed-text
+```
+
+**Verificar que Ollama está corriendo:**
+
+```bash
+curl http://localhost:11434/api/tags
+# Debe devolver un JSON con la lista de modelos instalados
+```
+
+### Paso 3: Backend Python (servidor de agentes)
 
 ```bash
 cd python-backend
-python -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
 
-# Arrancar (Ollama debe estar corriendo en localhost:11434)
+# Crear entorno virtual
+python -m venv .venv
+
+# Activar entorno virtual
+# Linux / macOS / WSL2:
+source .venv/bin/activate
+# Windows (PowerShell):
+# .venv\Scripts\Activate.ps1
+# Windows (CMD):
+# .venv\Scripts\activate.bat
+
+# Actualizar pip
+pip install --upgrade pip
+
+# Instalar dependencias
+pip install -r requirements.txt
+```
+
+**Verificar configuración** (edita `python-backend/config.py` si necesitas cambiar el modelo):
+
+```python
+# python-backend/config.py
+@dataclass
+class Settings:
+    ollama_host: str = "http://localhost:11434"
+    model: str = "llama3.1:8b"          # ← cambia si usas otro modelo
+    embedding_model: str = "nomic-embed-text"
+    # ... resto de configuración
+```
+
+**Arrancar el backend:**
+
+```bash
+# Asegúrate de estar en python-backend/ con .venv activado
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### 3. Iniciar el frontend Next.js
+Debes ver:
+```
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Application startup complete.
+```
+
+**Verificar que el backend responde:**
 
 ```bash
-# En otra terminal, en la raíz del proyecto
-bun install         # o npm install
-bun run dev         # arranca en http://localhost:3000
+curl http://localhost:8000/health
+# {"status":"ok","model":"llama3.1:8b","models":["llama3.1:8b","nomic-embed-text"]}
 ```
 
-### 4. Apuntar el frontend al backend Python
+### Paso 4: Configurar el frontend para usar el backend Python
 
-Edita `src/lib/store.ts` y cambia:
+Edita `src/lib/store.ts` y reemplaza la línea que crea el socket:
 
-```ts
-socketSingleton = io('/?XTransformPort=3003', { ... })
+```typescript
+// ANTES (apunta al mini-servicio TS de demostración):
+socketSingleton = io('/?XTransformPort=3003', {
+  transports: ['polling', 'websocket'],
+  forceNew: true,
+  reconnection: true,
+  reconnectionAttempts: 5,
+  reconnectionDelay: 1000,
+  timeout: 20000,
+})
+
+// DESPUÉS (apunta a tu backend Python local):
+socketSingleton = io('http://localhost:8000', {
+  transports: ['websocket', 'polling'],
+  forceNew: true,
+  reconnection: true,
+  reconnectionAttempts: 5,
+  reconnectionDelay: 1000,
+  timeout: 20000,
+})
 ```
 
-por:
+### Paso 5: Frontend Next.js
 
-```ts
-socketSingleton = io('http://localhost:8000', { transports: ['websocket', 'polling'] })
+Abre **otra terminal** (mantén el backend Python corriendo en la primera):
+
+```bash
+# Vuelve a la raíz del proyecto
+cd /ruta/a/ForgeAngent
+
+# Instalar Bun si no lo tienes (opcional pero recomendado)
+curl -fsSL https://bun.sh/install | bash
+
+# Instalar dependencias
+bun install
+# o alternativamente:
+# npm install
+
+# Configurar variables de entorno
+cp .env.example .env
+
+# Inicializar la base de datos SQLite
+bun run db:push
+# o: npx prisma db push
+
+# Arrancar el servidor de desarrollo
+bun run dev
+# o: npm run dev
 ```
 
-Abre http://localhost:3000 y empieza a chatear con Forge.
+Debes ver:
+```
+▲ Next.js 16.1.3 (Turbopack)
+- Local:        http://localhost:3000
+✓ Ready in 610ms
+```
+
+### Paso 6: Abrir la aplicación
+
+Abre tu navegador en **http://localhost:3000**
+
+Deberías ver:
+- ⚒️ Logo de Forge
+- Indicador "online" arriba a la derecha
+- 4 ejemplos de tareas en el estado vacío
+- Panel lateral con: Chat, Memoria, Skills, Docs, SOUL, Sistema
+
+**¡Listo!** Prueba con:
+> "Crea una API REST en Python con FastAPI para gestionar tareas"
+
+Verás el pipeline multi-agente ejecutarse en tiempo real:
+```
+🧭 Orchestrator → 💻 Coder → ✅ Reviewer → 🧭 Orchestrator (síntesis)
+```
+
+---
 
 ## 🎮 Uso
 
@@ -103,16 +237,19 @@ Abre http://localhost:3000 y empieza a chatear con Forge.
 
 Escribe tu request en español o inglés. El Orchestrator decidirá qué agentes actúan:
 
-- **"Crea una API REST en Python con FastAPI"** → Coder escribe, Reviewer verifica
-- **"Busca las últimas novedades de Next.js 16"** → Researcher busca, Reviewer sintetiza
-- **"Analiza los documentos que subí"** → Doc Analyst extrae, Orchestrator resume
-- **"Ejecuta este código y dime qué pasa"** → Coder ejecuta en sandbox
+| Tipo de request | Agentes que actúan |
+|---|---|
+| "Crea una API REST en Python" | Coder → Reviewer |
+| "Busca las novedades de Next.js 16" | Researcher → Reviewer |
+| "Analiza los documentos que subí" | Doc Analyst |
+| "Ejecuta este código y dime qué pasa" | Coder (con sandbox) |
+| Tareas complejas | Orquestación completa |
 
-Cada respuesta muestra el **pipeline de agentes** que se ejecutó, con detalles expandibles:
-
-```
-🧭 Orchestrator → 💻 Coder → ✅ Reviewer → 🧭 Orchestrator (síntesis)
-```
+Cada respuesta muestra el **pipeline de agentes** ejecutado, con detalles expandibles sobre:
+- Plan generado por el Orchestrator
+- Mensajes de cada agente
+- Llamadas a herramientas y sus resultados
+- Respuesta final sintetizada
 
 ### Panel de Memoria
 
@@ -134,11 +271,207 @@ Luego Forge puede invocar esa skill cuando sea relevante.
 
 ### Panel de Documentos
 
-Sube `.txt`, `.md`, `.json`, `.csv`, `.py`, `.js`, `.html`, etc. El Doc Analyst los indexa en ChromaDB y los busca por similitud semántica cuando necesita responder preguntas basadas en ellos.
+Sube archivos `.txt`, `.md`, `.json`, `.csv`, `.py`, `.js`, `.html`, `.pdf`, `.docx`. El Doc Analyst los indexa en ChromaDB y los busca por similitud semántica cuando necesita responder preguntas basadas en ellos.
 
 ### SOUL.md
 
-Edita la personalidad base del agente (Hermes-style). Cualquier cambio aplica inmediatamente a todos los agentes.
+Edita la personalidad base del agente (Hermes-style). Cualquier cambio aplica inmediatamente a todos los agentes. Ejemplo de personalización:
+
+```markdown
+# SOUL — Forge para mi equipo
+
+Eres Forge, asistente del equipo de Ingeniería de Datos.
+- Siempre respondes en español
+- Usas SQL con convenciones Snake Case
+- Citas las fuentes con formato APA
+- Para scripts de Python, usas type hints
+```
+
+---
+
+## 🛠️ Solución de Problemas
+
+### "Cannot connect to Ollama"
+
+```bash
+# Verifica que Ollama está corriendo
+curl http://localhost:11434/api/tags
+
+# Si no responde, inícialo
+ollama serve
+
+# En Linux verifica el servicio
+systemctl status ollama
+```
+
+### "Model not found"
+
+```bash
+# Lista modelos instalados
+ollama list
+
+# Si falta el modelo, descárgalo
+ollama pull llama3.1:8b
+ollama pull nomic-embed-text
+```
+
+### "CUDA out of memory"
+
+Tu GPU no tiene suficiente VRAM. Soluciones:
+1. Usa un modelo más pequeño: `ollama pull qwen2.5:1.5b` y actualiza `config.py`
+2. Cierra otras apps que usen GPU (juegos, navegadores con many tabs)
+3. Reduce `max_tokens` en `config.py` (de 2048 a 1024)
+
+### "Port 8000 already in use"
+
+```bash
+# Encuentra qué proceso usa el puerto
+lsof -i :8000      # Linux/macOS
+netstat -ano | findstr :8000   # Windows
+
+# Mata el proceso o usa otro puerto:
+uvicorn main:app --host 0.0.0.0 --port 8001 --reload
+# Recuerda actualizar src/lib/store.ts también
+```
+
+### "Port 3000 already in use"
+
+```bash
+# Next.js por defecto usa 3000
+# Para cambiarlo:
+bun run dev -- -p 3001
+```
+
+### "WebSocket connection failed" en el frontend
+
+1. Verifica que el backend Python esté corriendo: `curl http://localhost:8000/health`
+2. Verifica que `src/lib/store.ts` apunte a `http://localhost:8000` (Paso 4)
+3. Revisa la consola del navegador (F12) para ver errores de conexión
+4. Si usas el runtime TS de demostración en lugar del backend Python, mantén `/?XTransformPort=3003`
+
+### "ChromaDB initialization failed"
+
+```bash
+# Borrar el directorio de ChromaDB (se regenera al arrancar)
+rm -rf python-backend/data/chroma
+
+# Reiniciar el backend
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+### "Prisma database error"
+
+```bash
+# En la raíz del proyecto
+bun run db:push   # o: npx prisma db push
+bun run db:generate
+```
+
+### Errores de instalación de paquetes Python
+
+```bash
+# Actualiza pip y herramientas
+pip install --upgrade pip setuptools wheel
+
+# En Linux instala dependencias del sistema:
+sudo apt install -y build-essential python3-dev
+
+# sentence-transformers puede requerir:
+pip install torch --index-url https://download.pytorch.org/whl/cu121
+```
+
+---
+
+## 📁 Estructura del Proyecto
+
+```
+ForgeAngent/
+├── src/                              # Frontend Next.js
+│   ├── app/
+│   │   ├── page.tsx                  # Página principal con 6 paneles
+│   │   ├── layout.tsx                # Layout raíz
+│   │   └── globals.css               # Estilos globales
+│   ├── components/
+│   │   ├── chat-view.tsx             # Vista de chat con streaming
+│   │   ├── chat-input.tsx            # Input con auto-resize
+│   │   ├── agent-activity.tsx        # Visualizador del pipeline
+│   │   ├── memory-panel.tsx          # Panel de memoria
+│   │   ├── skills-panel.tsx          # Panel de skills
+│   │   ├── documents-panel.tsx       # Subida de documentos
+│   │   ├── soul-panel.tsx            # Editor SOUL.md
+│   │   ├── settings-panel.tsx        # Estado del sistema
+│   │   └── ui/                       # shadcn/ui components
+│   ├── lib/
+│   │   ├── store.ts                  # Zustand + Socket.IO client
+│   │   ├── db.ts                     # Prisma client
+│   │   └── utils.ts                  # cn() helper
+│   └── hooks/
+│       └── use-toast.ts
+├── prisma/
+│   └── schema.prisma                 # Conversation, Message, Memory, Skill, Document
+├── python-backend/                   # Backend Python para GPU NVIDIA
+│   ├── main.py                       # FastAPI + Socket.IO server
+│   ├── config.py                     # Settings (modelo, paths, límites)
+│   ├── llm.py                        # Ollama wrapper
+│   ├── agents.py                     # CrewAI multi-agent system
+│   ├── soul_default.py               # SOUL.md por defecto
+│   ├── tools/
+│   │   ├── __init__.py
+│   │   └── tools.py                  # 7 herramientas reales
+│   ├── requirements.txt
+│   └── README.py                     # Docstring con instrucciones
+├── mini-services/
+│   └── agent-runtime/                # Runtime TS (demo, sin GPU)
+│       ├── index.ts                  # Orchestrador + 5 agentes + 7 herramientas
+│       └── package.json
+├── examples/
+│   └── websocket/                    # Ejemplo de WebSocket
+├── public/
+│   ├── logo.svg
+│   └── robots.txt
+├── .env.example                      # Plantilla de variables de entorno
+├── .gitignore
+├── README.md                         # Este archivo
+├── package.json                      # Dependencias frontend
+├── bun.lock
+├── next.config.ts
+├── tsconfig.json
+├── tailwind.config.ts
+├── postcss.config.mjs
+├── eslint.config.mjs
+├── components.json                   # Config shadcn/ui
+└── Caddyfile                         # Config gateway (solo preview)
+```
+
+---
+
+## 🏗️ Arquitectura
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Browser (Next.js 16 + Tailwind + shadcn/ui)                    │
+│  ┌──────────────┬─────────────┬────────────┬──────────────┐    │
+│  │  Chat UI     │ Memoria     │ Skills     │ Documentos   │    │
+│  │  Bilingüe    │ Persistente │ (procedim.)│ (RAG upload) │    │
+│  └──────────────┴─────────────┴────────────┴──────────────┘    │
+│                          ↕ WebSocket                            │
+├─────────────────────────────────────────────────────────────────┤
+│  Agent Runtime (Python con FastAPI + Socket.IO)                 │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │  Orchestrator → plan → delegate → synthesize             │  │
+│  │       ↓         ↓         ↓           ↓                  │  │
+│  │   Coder    Researcher  Doc Analyst  Reviewer             │  │
+│  │   (code)   (web)        (RAG)         (verify)           │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│                          ↕                                       │
+├─────────────────────────────────────────────────────────────────┤
+│  Stack Local                                                    │
+│  • Ollama (LLM en GPU)         • ChromaDB (vectores)           │
+│  • DuckDuckGo (web search)     • Sandbox (subprocess)          │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
 
 ## 🛠️ Stack Técnico
 
@@ -168,63 +501,7 @@ Edita la personalidad base del agente (Hermes-style). Cualquier cambio aplica in
 - **z-ai-web-dev-sdk** (stand-in de Ollama para demo en el navegador)
 - Implementa el mismo protocolo que el backend Python — el frontend funciona con ambos
 
-## 📁 Estructura del Proyecto
-
-```
-forge/
-├── src/                          # Frontend Next.js
-│   ├── app/                      # App router (página única)
-│   ├── components/               # Componentes UI (chat, paneles, etc.)
-│   ├── lib/
-│   │   ├── store.ts              # Zustand store + socket.io client
-│   │   ├── db.ts                 # Prisma client
-│   │   └── utils.ts              # cn() helper
-│   └── components/ui/            # shadcn/ui components
-├── prisma/
-│   └── schema.prisma             # Conversations, Messages, Memories, Skills, Documents
-├── mini-services/
-│   └── agent-runtime/            # WebSocket mini-service (TS demo runtime)
-│       └── index.ts              # Orchestrador + 5 agentes + 7 herramientas
-├── python-backend/               # Backend Python de referencia (GPU NVIDIA)
-│   ├── main.py                   # FastAPI + Socket.IO server
-│   ├── config.py                 # Settings (model, paths, limits)
-│   ├── llm.py                    # Ollama wrapper
-│   ├── agents.py                 # CrewAI multi-agent system
-│   ├── soul_default.py           # Default SOUL.md
-│   ├── tools/
-│   │   ├── __init__.py
-│   │   └── tools.py              # 7 herramientas reales
-│   └── requirements.txt
-└── prisma/schema.prisma          # Modelo de datos
-```
-
-## 🔧 Configuración
-
-### Variables de entorno
-
-Crea `.env` en la raíz con:
-
-```env
-DATABASE_URL=file:./db/forge.db
-# Opcional: si quieres usar el backend Python en lugar del runtime TS
-NEXT_PUBLIC_AGENT_RUNTIME_URL=http://localhost:8000
-```
-
-### Configurar el backend Python
-
-Edita `python-backend/config.py`:
-
-```python
-@dataclass
-class Settings:
-    ollama_host: str = "http://localhost:11434"
-    model: str = "llama3.1:8b"          # ← cambia según tu GPU
-    temperature: float = 0.7
-    max_tokens: int = 2048
-    code_timeout: int = 10              # segundos
-    code_max_memory_mb: int = 512       # límite de memoria del sandbox
-    web_search_max_results: int = 5
-```
+---
 
 ## 🔌 Protocolo WebSocket
 
@@ -274,6 +551,8 @@ type AgentEvent = {
 }
 ```
 
+---
+
 ## 🆚 Diferencias con Hermes Agent
 
 | Característica            | Hermes Agent                | Forge                          |
@@ -290,6 +569,8 @@ type AgentEvent = {
 | **Desktop app**           | ✅ (macOS/Linux/Windows)     | ❌ (web only)                   |
 | **Foco**                  | Agente generalista           | **Desarrollo de aplicaciones** |
 
+---
+
 ## 🛣️ Roadmap
 
 - [ ] Soporte MCP (Model Context Protocol)
@@ -300,6 +581,19 @@ type AgentEvent = {
 - [ ] Trajectory export para fine-tuning (estilo Atropos)
 - [ ] Cron jobs / scheduled tasks
 - [ ] Multi-usuario con autenticación
+- [ ] Desktop app (Tauri)
+
+---
+
+## 🤝 Contribuir
+
+1. Fork el repositorio
+2. Crea una rama: `git checkout -b feature/nueva-funcionalidad`
+3. Commit tus cambios: `git commit -m 'feat: añadir nueva funcionalidad'`
+4. Push a la rama: `git push origin feature/nueva-funcionalidad`
+5. Abre un Pull Request
+
+---
 
 ## 📝 Licencia
 
