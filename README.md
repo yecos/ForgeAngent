@@ -97,6 +97,30 @@ curl http://localhost:11434/api/tags
 
 ### Paso 3: Backend Python (servidor de agentes)
 
+#### Opción A: Automática (recomendada)
+
+**Windows:**
+```cmd
+cd python-backend
+start.bat
+```
+
+**Linux / macOS / WSL2:**
+```bash
+cd python-backend
+chmod +x start.sh
+./start.sh
+```
+
+El script automáticamente:
+- Crea el entorno virtual `.venv`
+- Instala las dependencias
+- Verifica que Ollama esté corriendo
+- Verifica que haya modelos descargados
+- Arranca el servidor en `http://localhost:8000`
+
+#### Opción B: Manual
+
 ```bash
 cd python-backend
 
@@ -112,11 +136,20 @@ source .venv/bin/activate
 # .venv\Scripts\activate.bat
 
 # Actualizar pip
-pip install --upgrade pip
+python -m pip install --upgrade pip
 
 # Instalar dependencias
 pip install -r requirements.txt
 ```
+
+> ⚠️ **Si tienes errores de ResolutionImpossible o conflictos de dependencias:**
+> 
+> 1. Borra el entorno virtual: `rmdir /s /q .venv` (Windows) o `rm -rf .venv` (Unix)
+> 2. Crea uno nuevo: `python -m venv .venv`
+> 3. Actívalo y reinstala: `pip install -r requirements.txt`
+> 
+> Los nuevos `requirements.txt` eliminaron `crewai` (que causaba conflictos) y
+> ahora usan versiones loose (`>=` en vez de `==`).
 
 **Verificar configuración** (edita `python-backend/config.py` si necesitas cambiar el modelo):
 

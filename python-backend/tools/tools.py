@@ -3,13 +3,17 @@ Forge — Tool implementations (real local versions of the TS demo tools).
 
 Each tool returns a JSON-serializable dict that gets sent to the agent
 and the frontend.
+
+Cross-platform: works on Linux, macOS and Windows.
+  - Memory limits use `resource` on Unix; on Windows we skip them (subprocess
+    timeout still applies).
+  - Code execution uses `subprocess.run` with `timeout` everywhere.
 """
 from __future__ import annotations
 
 import ast
 import json
 import os
-import resource
 import subprocess
 import sys
 import traceback
@@ -20,6 +24,17 @@ from duckduckgo_search import DDGS
 
 from config import settings
 from llm import embed
+
+# ──────────────────────────────────────────────────────────────────────
+#  Cross-platform resource module
+# ──────────────────────────────────────────────────────────────────────
+
+try:
+    import resource  # Unix only
+    _HAS_RESOURCE = True
+except ImportError:
+    resource = None  # type: ignore
+    _HAS_RESOURCE = False
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -33,7 +48,7 @@ try:
     _doc_col = _chroma.get_or_create_collection("documents")
     _skill_col = _chroma.get_or_create_collection("skills")
 except Exception as e:  # noqa: BLE001
-    print(f"[forge] ChromaDB init failed: {e}")
+    print(f"[forge] ChromaDB init failed (memory/doc/skill features disabled): {e}")
     _chroma = None
     _mem_col = None
     _doc_col = None
@@ -67,7 +82,7 @@ def _safe_query(collection, query: str, n: int = 5):
 # ──────────────────────────────────────────────────────────────────────
 
 def web_search(query: str, num: int | None = None) -> Any:
-    """Real web search via DuckDuckGo HTML endpoint."""
+    """Real web search via DuckDuckGo."""
     n = num or settings.web_search_max_results
     try:
         with DDGS() as ddgs:
@@ -77,7 +92,7 @@ def web_search(query: str, num: int | None = None) -> Any:
                 "title": r.get("title"),
                 "url": r.get("href") or r.get("link"),
                 "snippet": r.get("body") or r.get("snippet"),
-                "host": r.get("href", "").split("/")[2] if r.get("href") else "",
+                "host": (r.get("href", "") or "").split("/")[2] if r.get("href") else "",
             }
             for r in results
         ]
@@ -114,7 +129,6 @@ def ingest_document(doc_id: str, filename: str, text: str, chunk_size: int = 800
     """Chunk and ingest a document into the vector store."""
     if _doc_col is None:
         return
-    # Split text into overlapping chunks
     chunks = []
     for i in range(0, len(text), chunk_size):
         chunk = text[i : i + chunk_size]
@@ -123,12 +137,15 @@ def ingest_document(doc_id: str, filename: str, text: str, chunk_size: int = 800
     if not chunks:
         return
     ids = [f"{doc_id}-{i}" for i in range(len(chunks))]
-    metas = [{"doc_id": doc_id, "filename": filename, "offset": i * chunk_size} for i in range(len(chunks))]
+    metas = [
+        {"doc_id": doc_id, "filename": filename, "offset": i * chunk_size}
+        for i in range(len(chunks))
+    ]
     _safe_add(_doc_col, ids, chunks, metas)
 
 
 # ──────────────────────────────────────────────────────────────────────
-#  Code execution — sandboxed Python subprocess
+#  Code execution — sandboxed Python subprocess (cross-platform)
 # ──────────────────────────────────────────────────────────────────────
 
 _BLOCKED_ATTRS = {
@@ -146,7 +163,7 @@ def _validate_code(code: str) -> tuple[bool, str]:
         return False, f"SyntaxError: {e}"
     for node in ast.walk(tree):
         if isinstance(node, ast.Attribute):
-            attr_chain = []
+            attr_chain: List[str] = []
             n = node
             while isinstance(n, ast.Attribute):
                 attr_chain.append(n.attr)
@@ -160,8 +177,19 @@ def _validate_code(code: str) -> tuple[bool, str]:
     return True, ""
 
 
+def _set_unix_limits():
+    """Pre-exec function for Unix — sets memory limit on the subprocess."""
+    if not _HAS_RESOURCE:
+        return
+    limit = settings.code_max_memory_mb * 1024 * 1024
+    try:
+        resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
+    except Exception:
+        pass  # best-effort
+
+
 def execute_code(language: str, code: str) -> Any:
-    """Run Python code in a sandboxed subprocess with limits."""
+    """Run Python code in a sandboxed subprocess with timeout."""
     if language.lower() not in ("python", "py", "python3"):
         return {
             "supported": False,
@@ -175,24 +203,34 @@ def execute_code(language: str, code: str) -> Any:
     # Write to a temp file
     workdir = settings.code_workdir
     workdir.mkdir(parents=True, exist_ok=True)
-    script_path = workdir / f"exec_{os.getpid()}_{hash(code) & 0xFFFFFFFF:x}.py"
+    script_path = workdir / f"exec_{os.getpid()}_{abs(hash(code)) & 0xFFFFFFFF:x}.py"
     script_path.write_text(code, encoding="utf-8")
 
-    def limit_resources():
-        # Max memory (bytes)
-        limit = settings.code_max_memory_mb * 1024 * 1024
-        resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
-        # No subprocesses — enforced by parent via _BLOCKED_ATTRS check
+    # Build subprocess kwargs — cross-platform
+    subprocess_kwargs: Dict[str, Any] = {
+        "capture_output": True,
+        "text": True,
+        "timeout": settings.code_timeout,
+        "cwd": str(workdir),
+        # Restricted environment
+        "env": {
+            "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+            "PYTHONPATH": "",
+            "PYTHONIOENCODING": "utf-8",
+        },
+    }
+
+    # Unix-only: memory limit via preexec_fn
+    if _HAS_RESOURCE:
+        subprocess_kwargs["preexec_fn"] = _set_unix_limits
+    # Windows-only: use CREATE_NEW_PROCESS_GROUP to isolate
+    if sys.platform == "win32":
+        subprocess_kwargs["creationflags"] = 0x00000200  # CREATE_NEW_PROCESS_GROUP
 
     try:
         result = subprocess.run(
             [sys.executable, str(script_path)],
-            capture_output=True,
-            text=True,
-            timeout=settings.code_timeout,
-            preexec_fn=limit_resources,
-            cwd=str(workdir),
-            env={"PATH": "/usr/local/bin:/usr/bin:/bin", "PYTHONPATH": ""},
+            **subprocess_kwargs,
         )
         return {
             "supported": True,
@@ -202,9 +240,18 @@ def execute_code(language: str, code: str) -> Any:
             "returncode": result.returncode,
         }
     except subprocess.TimeoutExpired:
-        return {"supported": True, "language": "python", "error": f"Timeout after {settings.code_timeout}s"}
+        return {
+            "supported": True,
+            "language": "python",
+            "error": f"Timeout after {settings.code_timeout}s",
+        }
     except Exception as e:  # noqa: BLE001
-        return {"supported": True, "language": "python", "error": str(e), "traceback": traceback.format_exc()}
+        return {
+            "supported": True,
+            "language": "python",
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+        }
     finally:
         try:
             script_path.unlink()
@@ -238,10 +285,7 @@ def memory_recall(query: str, n: int = 5) -> Any:
     results = _safe_query(_mem_col, query, n)
     if not results:
         return {"note": "No matching memories."}
-    return [
-        {"id": _id, "content": doc, **meta}
-        for _id, doc, meta in results
-    ]
+    return [{"id": _id, "content": doc, **meta} for _id, doc, meta in results]
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -252,7 +296,6 @@ def skill_create(name: str, description: str, trigger: str, steps: List[str]) ->
     """Create or update a skill in the vector store."""
     if _skill_col is None:
         return {"error": "Vector store not available"}
-    # Delete any existing skill with the same name
     try:
         existing = _skill_col.get(where={"name": name})
         if existing["ids"]:
