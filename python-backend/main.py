@@ -24,7 +24,7 @@ from agents import run_orchestration
 from config import settings
 from llm import chat, list_models
 from soul_default import DEFAULT_SOUL_MD
-from tools import (
+from forge_tools import (
     web_search,
     doc_search,
     execute_code,
@@ -33,7 +33,7 @@ from tools import (
     skill_create,
     skill_lookup,
 )
-from tools.tools import ingest_document
+from forge_tools.implementations import ingest_document
 
 # ──────────────────────────────────────────────────────────────────────
 #  State
