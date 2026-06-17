@@ -61,7 +61,10 @@ echo  Press Ctrl+C to stop.
 echo ============================================================
 echo.
 
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+REM NOTE: --reload removed because WatchFiles scans the .venv directory
+REM (thousands of files) which can take 60+ seconds on first start.
+REM Use --reload only during active backend development.
+uvicorn main:app --host 0.0.0.0 --port 8000
 goto :end
 
 REM ── Error handlers ────────────────────────────────────────────

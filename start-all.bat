@@ -31,15 +31,15 @@ REM ── Step 2: Start backend in a new window ──────────�
 if not exist "python-backend\start.bat" goto :no_backend_script
 start "Forge Backend" cmd /k "cd /d %~dp0python-backend && start.bat"
 
-REM ── Step 3: Wait for backend to come up (max 60 seconds) ──────
-echo [INFO] Waiting for backend to be ready (max 60 seconds)...
+REM ── Step 3: Wait for backend to come up (max 120 seconds) ─────
+echo [INFO] Waiting for backend to be ready (max 120 seconds)...
 set /a counter=0
 :wait_loop
 powershell -Command "try { (Invoke-WebRequest -Uri 'http://localhost:8000/health' -UseBasicParsing -TimeoutSec 2).StatusCode } catch { exit 1 }" >nul 2>nul
 if not errorlevel 1 goto :backend_ready
 set /a counter+=1
-if %counter% GEQ 30 goto :backend_timeout
-echo     [%counter%/30] Backend still starting...
+if %counter% GEQ 60 goto :backend_timeout
+echo     [%counter%/60] Backend still starting...
 timeout /t 2 /nobreak >nul
 goto :wait_loop
 

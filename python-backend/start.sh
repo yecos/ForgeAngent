@@ -55,6 +55,9 @@ if ! python _check.py models; then
 fi
 
 # Start the server
+# NOTE: --reload removed because WatchFiles scans the .venv directory
+# (thousands of files) which can take 60+ seconds on first start.
+# Use --reload only during active backend development.
 echo ""
 echo "============================================================"
 echo "  Forge backend is starting on http://localhost:8000"
@@ -62,4 +65,4 @@ echo "  Press Ctrl+C to stop."
 echo "============================================================"
 echo ""
 
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+uvicorn main:app --host 0.0.0.0 --port 8000
