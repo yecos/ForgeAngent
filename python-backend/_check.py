@@ -15,6 +15,7 @@ Exit codes:
 """
 from __future__ import annotations
 
+import json
 import sys
 import urllib.request
 
@@ -31,6 +32,39 @@ OLLAMA_URL = "http://localhost:11434/api/tags"
 
 # Any of these substrings in a model name means we have a usable LLM
 LLM_HINTS = ("llama", "qwen", "phi", "mistral", "gemma", "deepseek", "yi", "solar")
+
+
+def _extract_model_names(response) -> list[str]:
+    """
+    Extract model names from an Ollama list response.
+
+    Handles all SDK versions:
+      - Old dict:  {"models": [{"name": "llama3.1:8b"}, ...]}
+      - New dict:  {"models": [{"model": "llama3.1:8b"}, ...]}
+      - Pydantic:  ListResponse(models=[Model(model="llama3.1:8b", ...)])
+    """
+    # Get the list of models, whether response is a dict or a Pydantic object
+    if hasattr(response, "models"):
+        models = response.models
+    elif isinstance(response, dict):
+        models = response.get("models", [])
+    else:
+        models = []
+
+    names = []
+    for m in models:
+        name = None
+        # Pydantic Model object
+        if hasattr(m, "model") and getattr(m, "model"):
+            name = m.model
+        elif hasattr(m, "name") and getattr(m, "name"):
+            name = m.name
+        # Dict
+        elif isinstance(m, dict):
+            name = m.get("model") or m.get("name")
+        if name:
+            names.append(name)
+    return names
 
 
 def check_deps() -> int:
@@ -69,34 +103,41 @@ def check_ollama() -> int:
 
 
 def check_models() -> int:
-    """Return 0 if at least one usable LLM model is available, 1 otherwise."""
-    try:
-        import ollama
-    except ImportError:
-        print("[FAIL] ollama Python package not installed")
-        return 1
+    """
+    Return 0 if at least one usable LLM model is available, 1 otherwise.
 
+    Uses the raw HTTP API (/api/tags) directly so it doesn't depend on the
+    ollama Python SDK's response shape (which changed across versions).
+    """
     try:
-        response = ollama.list()
-        models = [m.get("name", "") for m in response.get("models", [])]
+        with urllib.request.urlopen(OLLAMA_URL, timeout=5) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
     except Exception as e:
-        print(f"[FAIL] Cannot list Ollama models: {e}")
+        print(f"[FAIL] Cannot fetch model list from Ollama: {e}")
         return 1
 
-    if not models:
+    # The HTTP API returns: {"models": [{"name": "llama3.1:8b", ...}, ...]}
+    raw_models = data.get("models", [])
+    names = []
+    for m in raw_models:
+        name = m.get("name") or m.get("model")
+        if name:
+            names.append(name)
+
+    if not names:
         print("[FAIL] No models installed in Ollama.")
         print("       Run:  ollama pull llama3.1:8b")
         print("       And:  ollama pull nomic-embed-text")
         return 1
 
-    has_llm = any(any(hint in m.lower() for hint in LLM_HINTS) for m in models)
+    has_llm = any(any(hint in n.lower() for hint in LLM_HINTS) for n in names)
     if not has_llm:
-        print(f"[FAIL] Models found: {models}")
+        print(f"[FAIL] Models found: {names}")
         print("       None of them look like a usable LLM.")
         print("       Pull one with:  ollama pull llama3.1:8b")
         return 1
 
-    print(f"[OK] Available models: {models}")
+    print(f"[OK] Available models: {names}")
     return 0
 
 
@@ -128,3 +169,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
