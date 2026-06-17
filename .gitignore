@@ -1,54 +1,93 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+bun.lockb
 
-# dependencies
-node_modules
-/.pnp
-.pnp.*
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/versions
-
-# testing
-/coverage
-
-# next.js
-/.next/
-/out/
-
-# production
-/build
-
-# misc
-.DS_Store
-*.pem
-
-# debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
-
-# env files (can opt-in for committing if needed)
-.env*
-
-# vercel
-.vercel
-
-
-# typescript
+# Build output
+.next/
+out/
+dist/
+build/
 *.tsbuildinfo
-next-env.d.ts
-local-*
-.claude
-.z-ai-config
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Python backend data
+python-backend/data/
+python-backend/.venv/
+python-backend/SOUL.md
+
+# Database
+db/
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Environment
+.env
+.env.local
+.env.development
+.env.production
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Logs
 *.log
 dev.log
-dev.out.log
-test
-prompt
-
 server.log
-# Skills directory
-/skills/
+/tmp/
+
+# Mini-service build artifacts
+mini-services/*/node_modules/
+mini-services/*/dist/
+
+# Tool results / temp
+tool-results/
+hermes_search.json
+hermes_readme.json
+hermes_docs.json
+
+# Prisma generated (kept for portability)
+# (Note: prisma/client is in node_modules and gitignored via node_modules)
+
+# OS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Sandbox / sandboxed execution
+sandbox/
+.sandbox/
+
+# Caddy / Z scripts (environment-specific)
+.zscripts/
+Caddyfile.lock
+
+# Internal skill packages (environment-specific, not part of Forge)
+skills/
+
+# Keep these tracked
+!.env.example
+!.prisma/
+!prisma/
