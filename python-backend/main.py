@@ -164,10 +164,18 @@ async def update_soul(content: str):
 # ──────────────────────────────────────────────────────────────────────
 #  Socket.IO server (same protocol as the TS runtime)
 # ──────────────────────────────────────────────────────────────────────
+#
+# IMPORTANT: do NOT use app.mount('/socket.io', ...) — that pattern breaks
+# python-socketio because Starlette strips the mount prefix from the path
+# before forwarding to the sub-app. The Socket.IO server expects the path
+# to be /socket.io/... and receives /... instead, returning 404 to the client.
+#
+# Correct pattern: wrap the FastAPI app inside socketio.ASGIApp via
+# `other_asgi_app`. The combined ASGI app routes:
+#   - /socket.io/*  → python-socketio
+#   - everything else → FastAPI (including /health, /api/status, etc.)
 
 sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
-socket_app = socketio.ASGIApp(sio)
-app.mount("/socket.io", socket_app)
 
 
 @sio.event
@@ -286,6 +294,16 @@ async def on_agents_info(sid):
 async def on_tool_web_search(sid, data):
     results = web_search(data.get("query", ""))
     await sio.emit("tool:web_search:result", {"query": data.get("query"), "results": results}, to=sid)
+
+
+# ──────────────────────────────────────────────────────────────────────
+#  Combined ASGI app: Socket.IO + FastAPI
+# ──────────────────────────────────────────────────────────────────────
+# This MUST be at the very end of the module so that all routes and sio
+# handlers are already registered. `app` is reassigned to the combined
+# ASGI app, which is what uvicorn imports as `main:app`.
+
+app = socketio.ASGIApp(sio, other_asgi_app=app)
 
 
 # ──────────────────────────────────────────────────────────────────────
