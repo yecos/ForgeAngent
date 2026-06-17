@@ -21,23 +21,36 @@ if [ ! -d ".venv" ]; then
 fi
 
 # Activate
+# shellcheck disable=SC1091
 source .venv/bin/activate
 
 # Upgrade pip
 echo "[INFO] Upgrading pip..."
 python -m pip install --upgrade pip
 
-# Install dependencies if not installed
-if ! python -c "import fastapi, uvicorn, socketio, ollama, chromadb" 2>/dev/null; then
+# Check dependencies
+echo "[INFO] Checking dependencies..."
+if ! python _check.py deps; then
     echo "[INFO] Installing dependencies (this can take 5-10 minutes on first run)..."
     pip install -r requirements.txt
+    echo "[OK] Dependencies installed."
 fi
 
 # Check Ollama
-if ! curl -s --max-time 2 http://localhost:11434/api/tags > /dev/null; then
+echo "[INFO] Checking Ollama..."
+if ! python _check.py ollama; then
     echo ""
-    echo "[WARNING] Ollama is not running at http://localhost:11434"
-    echo "Start it in another terminal:  ollama serve"
+    echo "Start Ollama in another terminal:  ollama serve"
+    exit 1
+fi
+
+# Check models
+echo "[INFO] Checking models..."
+if ! python _check.py models; then
+    echo ""
+    echo "Pull a model first:"
+    echo "  ollama pull llama3.1:8b"
+    echo "  ollama pull nomic-embed-text"
     exit 1
 fi
 

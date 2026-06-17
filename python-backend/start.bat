@@ -9,78 +9,51 @@ setlocal
 REM Change to script directory
 cd /d "%~dp0"
 
-REM Check Python is installed
+REM ── Check Python is installed ──────────────────────────────────
 where python >nul 2>nul
-if errorlevel 1 (
-    echo [ERROR] Python not found in PATH.
-    echo Install Python 3.10+ from https://python.org and rerun.
-    pause
-    exit /b 1
-)
+if errorlevel 1 goto :no_python
 
-REM Create virtual environment if it doesn't exist
-if not exist ".venv\Scripts\python.exe" (
-    echo [INFO] Creating virtual environment...
-    python -m venv .venv
-    if errorlevel 1 (
-        echo [ERROR] Failed to create virtual environment.
-        pause
-        exit /b 1
-    )
-)
+REM ── Create virtual environment if it doesn't exist ────────────
+if exist ".venv\Scripts\python.exe" goto :venv_exists
+echo [INFO] Creating virtual environment...
+python -m venv .venv
+if errorlevel 1 goto :venv_failed
+goto :activate
 
-REM Activate virtual environment
+:venv_exists
+echo [INFO] Virtual environment already exists.
+
+:activate
+REM ── Activate virtual environment ──────────────────────────────
 call ".venv\Scripts\activate.bat"
 
-REM Upgrade pip
+REM ── Upgrade pip ───────────────────────────────────────────────
 echo [INFO] Upgrading pip...
 python -m pip install --upgrade pip
 
-REM Install dependencies if not installed
+REM ── Check if dependencies are installed ───────────────────────
 echo [INFO] Checking dependencies...
-python -c "import fastapi, uvicorn, socketio, ollama, chromadb" 2>nul
-if errorlevel 1 (
-    echo [INFO] Installing dependencies (this can take 5-10 minutes on first run)...
-    pip install -r requirements.txt
-    if errorlevel 1 (
-        echo.
-        echo [ERROR] Dependency installation failed.
-        echo Try installing manually:
-        echo     pip install fastapi "uvicorn[standard]" python-socketio ollama chromadb duckduckgo-search
-        pause
-        exit /b 1
-    )
-)
+python _check.py deps
+if errorlevel 1 goto :install_deps
+goto :check_ollama
 
-REM Check Ollama is running
+:install_deps
+echo [INFO] Installing dependencies (this can take 5-10 minutes on first run)...
+pip install -r requirements.txt
+if errorlevel 1 goto :deps_failed
+echo [OK] Dependencies installed successfully.
+
+:check_ollama
 echo [INFO] Checking Ollama...
-python -c "import urllib.request; urllib.request.urlopen('http://localhost:11434/api/tags', timeout=2)" 2>nul
-if errorlevel 1 (
-    echo.
-    echo [WARNING] Ollama is not running at http://localhost:11434
-    echo Please start Ollama first:
-    echo   - Open a new terminal and run: ollama serve
-    echo   - Or start it from the Windows tray icon
-    echo.
-    pause
-    exit /b 1
-)
+python _check.py ollama
+if errorlevel 1 goto :no_ollama
 
-REM Check models are available
+:check_models
 echo [INFO] Checking models...
-python -c "import ollama; models = [m['name'] for m in ollama.list().get('models', [])]; print('Available models:', models); assert any('llama' in m or 'qwen' in m or 'phi' in m for m in models), 'No LLM model found. Run: ollama pull llama3.1:8b'" 2>nul
-if errorlevel 1 (
-    echo.
-    echo [WARNING] No LLM model found in Ollama.
-    echo Please pull a model first:
-    echo     ollama pull llama3.1:8b
-    echo     ollama pull nomic-embed-text
-    echo.
-    pause
-    exit /b 1
-)
+python _check.py models
+if errorlevel 1 goto :no_models
 
-REM Start the server
+REM ── Start the server ──────────────────────────────────────────
 echo.
 echo ============================================================
 echo  Forge backend is starting on http://localhost:8000
@@ -89,6 +62,46 @@ echo ============================================================
 echo.
 
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+goto :end
 
-endlocal
+REM ── Error handlers ────────────────────────────────────────────
+
+:no_python
+echo [ERROR] Python not found in PATH.
+echo Install Python 3.10+ from https://python.org and rerun.
+goto :pause_exit
+
+:venv_failed
+echo [ERROR] Failed to create virtual environment.
+goto :pause_exit
+
+:deps_failed
+echo.
+echo [ERROR] Dependency installation failed.
+echo Try installing manually:
+echo     pip install -r requirements.txt
+goto :pause_exit
+
+:no_ollama
+echo.
+echo [WARNING] Ollama is not running.
+echo Please start Ollama first:
+echo   - Open a new terminal and run:  ollama serve
+echo   - Or start it from the Windows system tray icon
+goto :pause_exit
+
+:no_models
+echo.
+echo [WARNING] No LLM model found in Ollama.
+echo Please pull a model first:
+echo     ollama pull llama3.1:8b
+echo     ollama pull nomic-embed-text
+goto :pause_exit
+
+:pause_exit
+echo.
 pause
+exit /b 1
+
+:end
+endlocal
